@@ -84,8 +84,8 @@
     </div>
 
     <script type="text/javascript">
-        function generateCheckboxList(items, selectedItems, containerId) {
-            const container = document.getElementById(containerId);
+        function generateCheckboxList(page, items, selectedItems, containerId) {
+            const container = page.querySelector('#' + containerId);
             const fragment = document.createDocumentFragment();
             for (const item of items) {
                 const label = document.createElement("label");
@@ -97,17 +97,17 @@
             container.appendChild(fragment);
         }
 
-        async function populateLibraries(config) {
+        async function populateLibraries(page, config) {
             const response = await window.ApiClient.getVirtualFolders();
             const tvLibraries = response.filter((item) => item.CollectionType === undefined || item.CollectionType === "tvshows" || item.CollectionType === "movies");
             const libraryNames = tvLibraries.map(lib => ({ Value: lib.Name, Text: lib.Name }));
-            generateCheckboxList(libraryNames, config.SelectedSubtitlesLibraries, "librarySubtitlesCheckboxes");
-            generateCheckboxList(libraryNames, config.SelectedAttachmentsLibraries, "libraryAttachmentsCheckboxes");
+            generateCheckboxList(page, libraryNames, config.SelectedSubtitlesLibraries, "librarySubtitlesCheckboxes");
+            generateCheckboxList(page, libraryNames, config.SelectedAttachmentsLibraries, "libraryAttachmentsCheckboxes");
         }
 
-        function toggleMode(isAdvanced) {
-            const easyModeSection = document.getElementById('easyModeSection');
-            const codecsDetails = document.getElementById('codecsDetails');
+        function toggleMode(page, isAdvanced) {
+            const easyModeSection = page.querySelector('#easyModeSection');
+            const codecsDetails = page.querySelector('#codecsDetails');
 
             if (isAdvanced) {
                 easyModeSection.style.display = 'none';
@@ -122,60 +122,67 @@
 
             var pluginId = "CD893C24-B59E-4060-87B2-184070E1BF68";
 
-            $('.subsExtractorConfigurationPage').on('pageshow', function (event) {
+            // The dashboard caches views: a restored view gets pageshow again without
+            // this script re-running, while a fresh load inserts a new page element and
+            // runs it again. An older cached copy (e.g. reached via a different query
+            // string) may still be in the DOM, so bind only to a page not yet bound.
+            const page = document.querySelector('.subsExtractorConfigurationPage:not([data-listeners-bound])');
+            if (!page) {
+                return;
+            }
+            page.dataset.listenersBound = 'true';
 
-                var page = this;
+            page.addEventListener('pageshow', function () {
 
                 Dashboard.showLoadingMsg();
 
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                    populateLibraries(config);
+                    populateLibraries(page, config);
 
                     page.querySelector('#chkEnableDuringScan').checked = !!config.ExtractionDuringLibraryScan;
                     page.querySelector('#chkTextSubtitles').checked = !!config.IncludeTextSubtitles;
                     page.querySelector('#chkGraphicalSubtitles').checked = !!config.IncludeGraphicalSubtitles;
                     page.querySelector('#chkAdvancedMode').checked = !!config.IsAdvancedMode;
 
-                    generateCheckboxList(config.AllSubtitleCodecs, config.SelectedCodecs, "includedCodecsCheckboxes");
+                    generateCheckboxList(page, config.AllSubtitleCodecs, config.SelectedCodecs, "includedCodecsCheckboxes");
 
                     const isAdvanced = config.IsAdvancedMode === true;
-                    toggleMode(isAdvanced);
+                    toggleMode(page, isAdvanced);
 
                     Dashboard.hideLoadingMsg();
                 });
             });
 
-            $('.extractorConfigurationForm').off('submit.plugin').on('submit.plugin', function (e) {
+            page.querySelector('.extractorConfigurationForm').addEventListener('submit', function (e) {
+                e.preventDefault();
 
                 Dashboard.showLoadingMsg();
 
-                var form = this;
+                const form = e.currentTarget;
 
                 ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                     config.ExtractionDuringLibraryScan = form.querySelector('#chkEnableDuringScan').checked;
                     config.IncludeTextSubtitles = form.querySelector('#chkTextSubtitles').checked;
                     config.IncludeGraphicalSubtitles = form.querySelector('#chkGraphicalSubtitles').checked;
                     config.IsAdvancedMode = form.querySelector('#chkAdvancedMode').checked;
-                    config.SelectedSubtitlesLibraries = getChecked('librarySubtitlesCheckboxes');
-                    config.SelectedAttachmentsLibraries = getChecked('libraryAttachmentsCheckboxes');
-                    config.SelectedCodecs = getChecked('includedCodecsCheckboxes');
+                    config.SelectedSubtitlesLibraries = getChecked(form, 'librarySubtitlesCheckboxes');
+                    config.SelectedAttachmentsLibraries = getChecked(form, 'libraryAttachmentsCheckboxes');
+                    config.SelectedCodecs = getChecked(form, 'includedCodecsCheckboxes');
 
                     ApiClient.updatePluginConfiguration(pluginId, config).then(Dashboard.processPluginConfigurationUpdateResult);
                 });
+            });
 
-                return false;
+            page.querySelector('#chkAdvancedMode').addEventListener('change', function (e) {
+                const isAdvanced = e.target.checked;
+                toggleMode(page, isAdvanced);
             });
 
         })();
 
-        document.querySelector('#chkAdvancedMode').addEventListener('change', function (e) {
-            const isAdvanced = e.target.checked;
-            toggleMode(isAdvanced);
-        });
-
-        function getChecked(wrapperId)
+        function getChecked(root, wrapperId)
         {
-            const nodes = document.getElementById(wrapperId).querySelectorAll('input:checked');
+            const nodes = root.querySelector('#' + wrapperId).querySelectorAll('input:checked');
             let values = [];
 
             for (const node of nodes)
